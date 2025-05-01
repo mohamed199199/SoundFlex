@@ -5,5 +5,4 @@ pydub
 numpy
 scipy
 pyngrok
-ffmpeg
 torch
