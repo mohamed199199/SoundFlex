@@ -1,109 +1,96 @@
+# ===================== تثبيت المكتبات =====================
+# لازم تثبتي دول قبل التشغيل:
+# pip install streamlit pyngrok soundfile torch numpy
+
 import streamlit as st
-import os
-import time
-import torch
-from pydub import AudioSegment
-from tempfile import NamedTemporaryFile
 from pyngrok import ngrok
+import torch
+import numpy as np
+import soundfile as sf
+import os
+import tempfile
+import subprocess
 
-# ===================== إعداد ngrok =====================
-public_url = ngrok.connect(8501)
-st.sidebar.success(f"رابط التطبيق من أي جهاز: {public_url}")
+# ===================== دالة تحويل الصوت (باستخدام so-vits-svc) =====================
+def advanced_voice_processing(uploaded_wav):
+    # حفظ الملف المؤقت
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_input:
+        tmp_input.write(uploaded_wav.read())
+        input_path = tmp_input.name
 
-# ===================== إعداد الصفحة =====================
-st.set_page_config(page_title="Voice Conversion Project", layout="centered")
-st.title("مشروع تحويل الصوت بين البنت والولد")
+    # مسار النموذج المدرب المفترض
+    model_path = "uploaded_model.pth"
+    output_path = input_path.replace(".wav", "_converted.wav")
 
-# ===================== خوارزميات المعالجة والتحسين =====================
-def advanced_voice_processing(input_path):
-    time.sleep(1)  # محاكاة لتحسين السرعة
-    # تحسينات سريعة وهمية - في الواقع تربط هنا RVC/so-vits-svc وخوارزميات
-    st.info("تشغيل إزالة الضوضاء، تعديل النغمة، ضغط النطاق...")
-    time.sleep(2)
-    output_path = "converted_sample.opus"
-    sound = AudioSegment.from_file(input_path)
-    sound.export(output_path, format="opus")
-    return output_path
+    # أمر التحويل (لازم يكون عندك inference_main.py في نفس المجلد)
+    command = [
+        "python3", "inference_main.py",
+        "--input_wav", input_path,
+        "--output_wav", output_path,
+        "--model_path", model_path
+    ]
 
-# ===================== خانة 1: رفع العينة =====================
-st.header("1. رفع عينة الصوت")
-upload_option = st.radio("اختر طريقة الرفع:", ["تسجيل من المايك", "رفع من الملفات", "سحب وإفلات"])
-uploaded_file = None
+    try:
+        subprocess.run(command, check=True)
+        return output_path
+    except Exception as e:
+        st.error(f"فشل في التحويل: {e}")
+        return None
 
-if upload_option == "رفع من الملفات" or upload_option == "سحب وإفلات":
-    uploaded_file = st.file_uploader("ارفع العينة الصوتية", type=["wav", "mp3", "ogg"])
-elif upload_option == "تسجيل من المايك":
-    st.info("ميزة التسجيل غير مدعومة مباشرة داخل المتصفح حالياً.")
+# ===================== واجهة Streamlit =====================
+st.set_page_config(page_title="تحويل الصوت بين بنت وولد", layout="centered")
+st.title("تطبيق تحويل الصوت بين بنت وولد")
 
-# ===================== خانة 2: خيارات التحويل =====================
-st.header("2. خيارات التحويل")
-conversion_type = st.selectbox("نوع التحويل:", ["من ولد لبنت", "من بنت لولد", "من ولد لولد", "من بنت لبنت"])
-intensity = st.slider("قوة التحويل:", 1, 30, 15)
+# خانة 1: رفع وتحويل الصوت
+st.header("1. رفع وتحوير الصوت")
+tfile = st.file_uploader("ارفع عينة صوتية (WAV)", type=["wav"])
 
-# ===================== التحويل التلقائي =====================
-if uploaded_file:
-    with st.spinner("جاري التحويل تلقائياً..."):
-        tfile = NamedTemporaryFile(delete=False)
-        tfile.write(uploaded_file.read())
-        tfile_path = tfile.name
-        converted_path = advanced_voice_processing(tfile_path)
+# خانة 2: رفع النموذج
+st.header("2. رفع نموذج التحويل")
+model_file = st.file_uploader("ارفع ملف النموذج المدرب (.pth أو .ckpt)", type=["pth", "ckpt"])
+if model_file:
+    with open("uploaded_model.pth", "wb") as f:
+        f.write(model_file.read())
+    st.success("تم رفع النموذج بنجاح")
+
+# خانة 3: تنفيذ التحويل
+if tfile and os.path.exists("uploaded_model.pth"):
+    st.info("جاري التحويل، برجاء الانتظار...")
+    converted_path = advanced_voice_processing(tfile)
+
+    if converted_path:
         st.success("تم التحويل بنجاح")
+
         st.subheader("الاستماع للصوت الأصلي")
-        st.audio(tfile_path, format="audio/wav")
+        tfile.seek(0)
+        st.audio(tfile, format="audio/wav")
+
         st.subheader("الاستماع للصوت المحول")
-        st.audio(converted_path, format="audio/ogg")
-        st.download_button("تحميل النتيجة", open(converted_path, "rb"), file_name="converted.opus")
+        st.audio(converted_path, format="audio/wav")
 
-# ===================== خانة 3: رفع النموذج المدرب =====================
-st.header("3. رفع نموذج التحويل")
-model_input_type = st.radio("طريقة رفع النموذج المدرب:", ["رابط Google Drive", "رفع مباشر"])
+        with open(converted_path, "rb") as f:
+            st.download_button("تحميل الصوت المحول", f, file_name="converted.wav")
+    else:
+        st.error("حصلت مشكلة أثناء التحويل")
 
-if model_input_type == "رابط Google Drive":
-    link = st.text_input("ادخل رابط Google Drive")
-    if link:
-        st.success("تم استلام الرابط")
-elif model_input_type == "رفع مباشر":
-    model_file = st.file_uploader("ارفع ملف النموذج", type=["pth", "ckpt"])
-    if model_file:
-        with open("uploaded_model.pth", "wb") as f:
-            f.write(model_file.getbuffer())
-        st.success("تم رفع النموذج بنجاح")
-
-# ===================== خانة 4: الأكواد للمطور =====================
-with st.expander("4. الأكواد (للمطور فقط)"):
-    code = st.text_area("اكتب أو عدل الكود:", height=200)
-    if st.button("Save Code"):
-        with open("saved_code.py", "w") as f:
-            f.write(code)
-        st.success("تم حفظ الكود بنجاح")
-
-# ===================== خانة 5: إعدادات المشروع =====================
-st.header("5. إعدادات المشروع")
-if st.button("حفظ تلقائي"):
-    st.success("تم حفظ آخر حالة للمشروع")
-if st.button("تحميل آخر مشروع محفوظ"):
-    st.info("تم تحميل الإعدادات السابقة")
-
-# ===================== ملخص المشروع =====================
+# ===================== تفاصيل إضافية =====================
 with st.expander("تفاصيل المشروع"):
     st.markdown("""
-    اسم المشروع: تحويل الصوت بين البنت والولد باستخدام تقنيات متقدمة.
-    المكتبات/الأدوات المستخدمة:
-    - Streamlit لواجهة المستخدم.
-
-Mohamed Ali, [5/1/2025 6:02 PM]
-- RVC/so-vits-svc لتحويل الصوت.
-    - HuBERT/ContentVec لتحديد نبرة الصوت.
-    - Pitch Shifting, Formant Shifting لتعديل نغمة الصوت والطبيعة.
-    - Noise Reduction لإزالة التشويش.
-    - Dynamic Range Compression لتظبيط النغمة.
-    - Voice Enhancer لتحسين الصوت.
-    - 24kHz لتحويل التردد للتوافق مع فويس الماسنجر.
-    
-    المميزات:
-    - رفع عينة صوتية من الجهاز أو Google Drive.
-    - تحويل تلقائي مباشر أول ما يتم رفع العينة.
-    - واجهة مستخدم تفاعلية وسهلة.
-    - تحسين سريع وعرض مباشر للصوت قبل وبعد.
-    - دعم التنزيل والمشاركة.
+    - تحويل الصوت باستخدام نموذج مدرب (so-vits-svc).
+    - رفع النموذج بصيغة .pth أو .ckpt.
+    - دعم ملفات WAV فقط.
+    - استخدام Streamlit لواجهة سهلة وتفاعلية.
+    - متوافق مع ngrok لمشاركة التطبيق أونلاين.
     """)
+
+# ===================== رابط ngrok =====================
+try:
+    public_url = ngrok.connect(8501)
+    st.markdown(f"**رابط التطبيق أونلاين:** [اضغط هنا]({public_url})")
+except:
+    st.warning("تعذر إنشاء رابط ngrok. تأكد إن ngrok متثبت بشكل صحيح.")
+
+# ===================== ملاحظات تشغيل =====================
+# لتشغيل التطبيق:
+# 1. ثبتي المكتبات: pip install streamlit pyngrok soundfile torch numpy
+# 2. شغليه: streamlit run app.py
