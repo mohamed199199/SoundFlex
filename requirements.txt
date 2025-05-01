@@ -1,3 +1,4 @@
+
 streamlit
 soundfile
 librosa
@@ -5,3 +6,4 @@ pydub
 numpy
 scipy
 pyngrok
+ffmpeg
