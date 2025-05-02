@@ -4,5 +4,4 @@ librosa
 pydub
 numpy
 scipy
-pyngrok
 torch
